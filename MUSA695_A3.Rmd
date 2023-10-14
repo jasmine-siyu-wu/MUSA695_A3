@@ -1,0 +1,444 @@
+---
+title: "Average Flight Fare of PHL and Other U.S. Airports"
+author: "Jasmine Siyu Wu"
+date: "10/10/2023"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    code_folding: hide
+  ioslides_presentation:
+    self-included: yes
+  pdf_document:
+    toc: yes
+---
+
+</br>
+
+In this document, we will use the Bureau of Transportation Statistics (BTS) Average Domestic Airline Itinerary Fares data^[Reference: https://www.bts.gov/air-fares] to explore some trends and, specifically, Philadelphia International Airport's (PHL) standing among the rest airports in terms of average airline fares. This BTS dataset provides inflation-adjusted and unadjusted average air fares since 1995. Averages are computed using data from the Bureau of Transportation Statistics' Passenger Origin and Destination (O&D) Survey, a 10% sample of all airline tickets for U.S. carriers, excluding charter air travel.
+
+Average Fares are based on domestic itinerary fares. Itinerary fares consist of round-trip fares unless the customer does not purchase a return trip. In that case, the one-way fare is included. Fares are based on the total ticket value which consists of the price charged by the airlines plus any additional taxes and fees levied by an outside entity at the time of purchase. Fares include only the price paid at the time of the ticket purchase and do not include fees for optional services, such as baggage fees. Averages do not include frequent-flyer or “zero fares.” The inflation adjustment is calculated using dollars for the most recent year of air fare data.
+
+
+</br>
+
+
+## Set up environment and create customized Theme
+
+We first import libraries and create customized plot themes.
+
+```{r libraries, include=TRUE, cache = FALSE, message = FALSE, warning = FALSE, results=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#Loading Libraries
+library(tidyverse)
+library(knitr)
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(kableExtra)
+library(dplyr)
+library(ggtext)
+library(grid)
+library(gridExtra)
+library(gridtext)
+
+options(scipen=1)  #999
+
+```
+
+
+```{r set up theme, include=TRUE, cache = FALSE, message = FALSE, results=FALSE}
+
+new_theme <- function () {
+      font <- "serif" 
+      theme_minimal() %+replace% # replace elements we want to see
+      
+      theme(
+        ## Grid elements
+        panel.grid.major= element_line(colour="#dddddd",size=.1), #element_blank(), #
+        panel.grid.minor = element_blank(),
+        #axis.line = element_line(colour="#D0D0D0",size=.2),
+        #axis.ticks = element_blank(),
+
+        ## Text elements
+        plot.title = element_text(
+          family = font,
+          size = 13,
+          lineheight = 0.75,
+          color = "#222222",
+          face = 'bold',
+          hjust = 0.65,
+          vjust = 0,
+          margin = margin(l=10, t=10, b=20, unit="pt")),
+        
+        #panel.background = element_rect(fill = "#eeeeee"),
+        plot.background = element_blank(),
+        
+        plot.subtitle = element_text(
+          family = font,
+          size = 12,
+          color = "#222222"),
+        
+        plot.caption = element_text(
+          family = font,
+          size = 9,
+          hjust = 1,
+          vjust = -1,
+          margin = margin(6, 0, 6, 0, "pt")),
+        
+        axis.text = element_text(
+          family=font,
+          size = 10),
+
+        
+        axis.title.y = element_text(
+          family = font,
+          color = "#222222",
+          face = 'bold',
+          size = 12,
+          hjust = 1, 
+          #vjust = 1,
+          margin = margin(0, 6, 0, 6, "pt")),
+        
+        axis.title.x = element_text(
+          family = font,
+          color = "#222222",
+          face = 'bold',
+          size = 12,
+          #hjust = 0, 
+          margin = margin(6, 0, 6, 0, "pt")),
+        
+        plot.margin = margin(.25,.25,.25,.25,"cm")
+        )
+      # legend often requires manual tweaking based on plot content so don't define it here
+}
+
+
+```
+
+
+
+<br/>
+
+
+## Read Average Domestic Airline Itinerary Fares Data (2009-2023)
+
+Now we will read in data from separate .csv files, which were downloaded from Bureau of Transportation Statistics (BTS) Average Domestic Airline Itinerary Fares By Origin City for Q1s (2009-2023)^[Data source: https://www.transtats.bts.gov/AverageFare/], and combine them into a single dataframe `avg_fare`. The resulted dataframe includes the following variables:
+
+- `psg_rank_2022`: 2022 Passenger Rank			
+
+- `code`: Airport Code
+
+- `name`: Airport name
+
+- `city`: Airport's city Name
+
+- `state`: Airport's state Name
+
+- `avg_fare`: Airport's average domestic airline itinerary fare ($)
+
+- `inf_avg_fare`:	Inflation Adjusted Average Fare ($) (Base Quarter: Q1-2023)
+
+- `psg_2022`: 2022 Passenger volume (10% sample)
+
+- `year`: Year of fares data collected (self-added)
+
+- `quarter`: Quarter of fares data collected (self-added)
+
+
+
+
+```{r read FARS data, cache = TRUE, message = FALSE, warning = FALSE, results=FALSE}
+
+year_list <- seq(2009, 2023, 1)
+avg_fare = as.data.frame(matrix(0, nrow=1, ncol=1))
+
+
+# testing reading 2009 data and all needed data cleaning
+# test <- read_csv("Data/AverageFare_Q1_2009.csv", col_names = FALSE) %>% 
+#         slice(2:n()) 
+# test <- test[, 1:8]
+# colnames(test) <- as.character(unlist((test[1,1:8])))
+# test <- test %>% slice(2:n()) 
+
+
+for (year in year_list)
+  {
+    #print(as.character(year))
+    avg_fare_path <- str_c("Data/AverageFare_Q1_", 
+                      as.character(year),
+                      ".csv") 
+    
+    avg_fare_temp <- read_csv(avg_fare_path, col_names = FALSE) %>% 
+                slice(2:n()) 
+    avg_fare_temp <- avg_fare_temp[, 1:8]
+    colnames(avg_fare_temp) <- as.character(unlist((avg_fare_temp[1,1:8])))
+    avg_fare_temp <- avg_fare_temp %>% 
+      slice(2:n()) %>%
+      mutate(Year = as.character(year),
+             Quarter = "Q1")
+    
+    #print(dim(avg_fare_temp))
+  
+    avg_fare <- bind_rows(avg_fare, avg_fare_temp)  #all fatal crashes
+
+  }
+
+remove(avg_fare_temp)
+remove(avg_fare_path)
+remove(year)
+avg_fare <- avg_fare[2:nrow(avg_fare), 2:ncol(avg_fare)]
+
+head(avg_fare, n = 20) %>% kable() %>% kable_styling()
+
+
+colnames(avg_fare) <- c("psg_rank_2022",
+                        "code",
+                        "name",
+                        "city",
+                        "state",
+                        "avg_fare",
+                        "inf_avg_fare",
+                        "psg_2022",
+                        "year",
+                        "quarter")
+
+avg_fare <- avg_fare %>%
+  mutate(psg_rank_2022 = as.numeric(psg_rank_2022),
+         avg_fare = as.numeric(avg_fare),
+         inf_avg_fare = as.numeric(inf_avg_fare),
+         psg_2022 = as.numeric(gsub(",", "", as.character(psg_2022))),
+         year = as.numeric(year))
+
+
+```
+
+</br>
+
+
+## Plot 1: Average flight fares of top 20 busiest airports in 2022 
+
+The story I want to tell using the plot below is that, among the busiest 20 airports, 
+Philadelphia International Airport (PHL) ranked middle of average flight fares. I want readers 
+to focus on Philadelphia International Airport, especially its ranking of average flight fares. 
+Therefore, I used a few Gestalt Principles and preattentive attributes to achieve this goal:
+
+- Continuity: I removed axes and moved y-axis ticks inside the bars since the bars help form the plot's boundary.
+
+- Closure: I removed the plot borderlines to reduce visual complexity.
+
+- Similarity: I colored all texts and shapes related to <span style='color:#FE6822;'>Philadelphia International Airport (PHL)</span> to the same color.
+
+- White spaces: I added white spaces (margins) between the plot title and the plot.
+
+- Strategic contrast: I greyed out all other airports to reduce their visual order.
+
+</br>
+
+```{r plot phl 2022 avg fare, message = FALSE, warning = FALSE, results=FALSE, fig.width=7, fig.height=7}
+
+plot_dat <- avg_fare %>% 
+               mutate(color = if_else(code == "PHL", "#FE6822", "#aaaaaa"),
+                      text_color = if_else(code == "PHL", "#ffffff", "#444444"),
+                      label_color = if_else(code == "PHL", "#FE6822", "#444444"),
+                      name_state = str_c(name, ", ", state)) %>%
+               filter((year == 2022) & (psg_rank_2022 < 21))
+
+ggplot(plot_dat, 
+       aes(x = reorder(name_state, inf_avg_fare), y = inf_avg_fare)) +
+  geom_col(aes(fill = color), width = .7) +
+  scale_fill_identity() +
+  geom_text(aes(label = scales::dollar(round(inf_avg_fare, digits = 0)), color = label_color), 
+            position=position_dodge(width=0.9), hjust =-0.05, 
+            size = 3) +
+  geom_text(aes(label = name_state, color = text_color), 
+            position=position_fill(), hjust =0, 
+            size = 3) +
+  scale_color_identity() +
+  scale_y_continuous(name = "Average Fare (2022$)", position = "left") +
+  coord_flip() +
+  labs(title = "Among the busiest airports in the U.S. in 2022,
+               \n<span style='color:#FE6822;'>Philadelphia International Airport (PHL)</span> ranked middle of average flight fares.",
+         # "Philadelphia International Airport's (PHL) average flight fare ranked \nmiddle among the busiest airports in the U.S. in 2022",
+       x=" ",
+       caption = "Data source: Bureau of Transportation Statistics, Average Domestic Airline Itinerary Fares, 2022 | By Jasmine Siyu Wu") +
+  new_theme() +
+  theme(axis.line=element_blank(),
+        axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        panel.grid.major= element_blank(),
+        plot.title.position = "plot",
+        plot.title = element_markdown())
+
+
+ggsave("plot1.jpeg", device = "jpeg", width = 7, height=7,
+       path = "Output")
+
+```
+</br>
+
+
+## Plot 2: Average fare vs. total passengers of U.S. airports
+
+The story I want to tell using the below plot is that, in 2022, all top 10% of busiest airports in the U.S. 
+have average flight fares below the national median. I want readers to focus on all airports in the right-bottom quadrant, 
+which contains all airports with the top 10% most passengers and with less than the national median flight fare. 
+Therefore, I used a few Gestalt Principles and preattentive attributes to achieve this goal:
+
+- Continuity: I removed axes since major panel grids help form the plot's boundary.
+
+- Closure: I removed the plot borderlines to reduce visual complexity.
+
+- Similarity: I colored all texts and shapes related to the right-bottom quadrant to the same color.
+
+- Connection: I added annotation close to the right-bottom quadrant to highlight the story. 
+
+- Strategic contrast: I greyed out all airports in other quadrants to reduce their visual order.
+
+</br>
+
+
+```{r plot phl avg fare trend, message = FALSE, warning = FALSE, results=FALSE, fig.width=10, fig.height=6}
+
+# top20_passenger <- plot_dat[plot_dat$psg_rank_2022 == 20 & plot_dat$year == 2022, ]$psg_2022[1]
+
+
+plot_dat <- avg_fare %>% filter(year == 2022) #& (psg_rank_2022 < 21
+
+median_inf_fare <- median(plot_dat$inf_avg_fare, na.rm = T)
+top10pct_psg_2022 <- quantile(plot_dat$psg_2022, probs = c(0.9), na.rm = T)
+top5pct_psg_2022 <- quantile(plot_dat$psg_2022, probs = c(0.95), na.rm = T)
+
+
+plot_dat <- plot_dat %>% mutate(color = if_else(psg_2022 >= top10pct_psg_2022, "#FE6822", "#aaaaaa"), 
+                      #color = if_else(code == "PHL", "#FE6822", "#aaaaaa"),
+                      name_state = str_c(name, ", ", state))
+
+text_grob <- grobTree(richtext_grob("<span style='color:#FE6822;'>In 2022, all top 10% busiest airports in the U.S. <br>have average flight fares below the national median</span>",
+                      x=.52,  y=.35, hjust=0, 
+                      gp=gpar(col = "#222222", fontsize=12),
+                      #box_gp = gpar(col = "white", fill = "white"),
+                      padding = margin(.2,0,0,0,"in"))
+                      ) 
+
+ggplot(plot_dat) + 
+  geom_point(aes(x=psg_2022, y=inf_avg_fare, color = color), size = 2) +
+  geom_hline(yintercept = median_inf_fare, linetype = "longdash", color = "#222222", linewidth=0.5) + 
+  geom_vline(xintercept = top10pct_psg_2022, linetype = "longdash", color = "#222222", linewidth=0.5) + 
+  #geom_point(x = avg_miles, y=avg_cost, size=3.5) + 
+  geom_label(x = top10pct_psg_2022, y = median_inf_fare, label = "MEDIAN FLIGHT FARE ($430)", 
+             hjust = 0.2, vjust = 0, label.size = 0) +
+  annotate(geom = "text", x = top10pct_psg_2022, y = median_inf_fare, label = "TOP 10% PASSENGERS", 
+             angle = 90, hjust = -0.3, vjust = 1.2) +
+  geom_point(aes(x=psg_2022, y=inf_avg_fare, color = color), size = 2,
+             plot_dat %>% filter(code == "PHL" | psg_rank_2022 == 1)) +
+  # geom_text(aes(x=psg_2022, y=inf_avg_fare, label = code, color = color),
+  #           vjust = 0.3, hjust = -0.2, check_overlap = TRUE,
+  #           size = 4,
+  #           data = plot_dat %>% filter(code == "PHL" | psg_rank_2022 == 1)) +
+  scale_color_identity() + 
+  scale_y_continuous(breaks = seq(0,1600,400), limits = c(0,1600),labels = scales::dollar_format()) + 
+  scale_x_continuous(limits = c(0,1250000), label = scales::comma) + 
+  labs(
+       x = "Total passengers (10% sample)", y = "Average Fare\n(2022$)",
+       caption = "Data source: Bureau of Transportation Statistics, Average Domestic Airline Itinerary Fares, 2022 | Jasmine Siyu Wu") +
+  new_theme()  + 
+  annotation_custom(
+      grob = text_grob, 
+      xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf)
+
+
+ggsave("plot2.jpeg", device = "jpeg", width = 10, height=6,
+       path = "Output")
+```
+
+</br>
+
+
+## Plot 3: PHL's sverage fare in comparison to national trend, 2009-23
+
+
+The story I want to tell using the below plot is that, on average, U.S. airports' average flight fares dropped sharply in 2021, 
+but Philadelphia International Airport (PHL) dropped more significantly than others.
+I want readers to focus on PHL's trend compared to the national trend. Therefore, I used a 
+few Gestalt Principles and preattentive attributes to achieve this goal:
+
+- Continuity: I removed axes since major panel grids help form the plot's boundary.
+
+- Closure: I removed the plot borderlines to reduce visual complexity.
+
+- Similarity: I colored all texts and shapes related to the <span style='color:#FE6822;'>Philadelphia International Airport (PHL)</span> to the same color.
+
+- Connection: I added annotation close to vertical 2021 line to highlight the story. 
+
+- Strategic contrast: I greyed out all airports in other quadrants to reduce their visual order.
+
+
+</br>
+
+
+```{r plot avg fare trend, message = FALSE, warning = FALSE, results=FALSE, fig.width=10, fig.height=6}
+
+plot_dat <- avg_fare %>% subset(., code == "PHL") %>% select(year, inf_avg_fare) %>%
+                 rename(phl_inf_avg_fare = inf_avg_fare) %>% 
+                 merge(., avg_fare %>% 
+                             # mutate(color = if_else(code == "PHL", "#FE6822", "#aaaaaa"),
+                             #        name_state = str_c(name, ", ", state)) %>%
+                             group_by(year) %>%
+                             summarise(min_inf_avg_fare = min(inf_avg_fare, na.rm = TRUE),
+                                       max_inf_avg_fare = max(inf_avg_fare, na.rm = TRUE),
+                                       q1_inf_avg_fare = quantile(inf_avg_fare, na.rm = TRUE)[2],
+                                       med_inf_avg_fare = quantile(inf_avg_fare, na.rm = TRUE)[3],
+                                       q3_inf_avg_fare = quantile(inf_avg_fare, na.rm = TRUE)[4],
+                                       mean_inf_avg_fare = mean(inf_avg_fare, na.rm = TRUE)), 
+                       by.x = "year", by.y="year")
+
+
+text_grob <- grobTree(richtext_grob("While U.S. airports' average flight fares largely<br>dropped in 2021,
+                                    <span style='color:#FE6822;'>Philadelphia International Airport<br>(PHL)</span>
+                                    dropped more significantly than others",
+                      x=.35,  y=.2, hjust=0, 
+                      gp=gpar(col = "#222222", fontsize=12),
+                      #box_gp = gpar(col = "white", fill = "white"),
+                      padding = margin(.2,0,0,0,"in"))
+                      ) 
+
+
+
+ggplot(plot_dat, aes(x = year)) +
+  geom_ribbon(aes(ymin = q1_inf_avg_fare, ymax = q3_inf_avg_fare), fill = "#aaaaaa", alpha=0.3) +
+  geom_line(aes(y = med_inf_avg_fare), size = 0.5, color = "#444444", linetype = "longdash") +
+  # geom_line(aes(y = q1_inf_avg_fare), size = 1, color = "#aaaaaa", linetype = "longdash") +
+  # geom_line(aes(y = q3_inf_avg_fare), size = 1, color = "#aaaaaa", linetype = "longdash") +
+  geom_line(aes(y = phl_inf_avg_fare), size = 2, color = "#FE6822") +
+  geom_text(aes(y = q1_inf_avg_fare), vjust = 1.5, color = "#444444", size = 3.5,
+            parse = T, label = "LOWEST_25TH_FARE", data = plot_dat %>% slice(4)) +
+  geom_text(aes(y = med_inf_avg_fare), vjust = -0.5, color = "#444444", size = 3.5,
+            parse = T, label = " MEDIAN_FARE", data = plot_dat %>% slice(4)) +
+  geom_text(aes(y = q3_inf_avg_fare), vjust = 0.5, color = "#444444", size = 3.5,
+            parse = T, label = "HIGHEST_25TH_FARE", data = plot_dat %>% slice(4)) +
+  geom_text(aes(y = phl_inf_avg_fare), vjust = 1.9, color = "#FE6822", size = 5,
+            parse = T, label = "bold(PHL)", data = plot_dat %>% slice(4)) +
+  geom_vline(xintercept = 2021, linewidth=0.75) + 
+  annotate(geom = "text", x = 2021, y = 700, label = " ") +
+  scale_y_continuous(breaks = seq(200, 800, 100), limit = c(200, 800), labels = scales::dollar_format()) +
+  scale_x_continuous(breaks = seq(2009, 2023, 1), limit = c(2009, 2023)) +
+  labs(y = "Average Fare\n(2022$)", x = NULL, 
+       #title = " ", 
+       caption = "Data source: Bureau of Transportation Statistics, Average Domestic Airline Itinerary Fares, 2009-23 | Jasmine Siyu Wu") +
+  new_theme() +
+  annotation_custom(
+      grob = text_grob, 
+      xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf)
+
+
+ggsave("plot3.jpeg", device = "jpeg", width = 10, height=6,
+       path = "Output")
+
+```
+
+
+
+
+
